@@ -7,6 +7,10 @@ const nextConfig = {
   // Evitar problemas de build tracing
   experimental: {
     serverComponentsExternalPackages: ['better-sqlite3'],
+    // En Vercel, usar standalone output que evita algunos problemas de tracing
+    ...(process.env.VERCEL === '1' && {
+      outputFileTracingRoot: process.cwd(),
+    }),
   },
   // Excluir directorios del build tracing para evitar stack overflow
   webpack: (config, { isServer, webpack }) => {
@@ -31,22 +35,6 @@ const nextConfig = {
     
     return config;
   },
-  // Deshabilitar build tracing problemático en Vercel
-  ...(process.env.VERCEL === '1' && {
-    outputFileTracingExcludes: {
-      '*': [
-        'src-tauri/**/*',
-        'scripts/**/*',
-        '*.md',
-        'Dockerfile',
-        'docker-compose*.yml',
-        'out/**/*',
-        '.dockerignore',
-        '.ngrok.env',
-        '.docker.env*',
-      ],
-    },
-  }),
 }
 
 // Configuración para Tauri - exportar como estático
@@ -54,6 +42,11 @@ if (isTauri) {
   nextConfig.output = 'export';
   nextConfig.images = { unoptimized: true };
   nextConfig.trailingSlash = true;
+}
+
+// En Vercel, usar output standalone para evitar problemas de tracing
+if (process.env.VERCEL === '1' && !isTauri) {
+  nextConfig.output = 'standalone';
 }
 
 module.exports = nextConfig
