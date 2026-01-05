@@ -9,7 +9,7 @@ const nextConfig = {
     serverComponentsExternalPackages: ['better-sqlite3'],
   },
   // Excluir directorios del build tracing para evitar stack overflow
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -17,19 +17,36 @@ const nextConfig = {
         path: false,
       };
     }
+    
     // Ignorar archivos problemáticos durante el build
-    config.watchOptions = {
-      ...config.watchOptions,
-      ignored: [
-        '**/src-tauri/**',
-        '**/scripts/**',
-        '**/*.md',
-        '**/Dockerfile',
-        '**/docker-compose*.yml',
-      ],
-    };
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        resourceRegExp: /^\.\/(src-tauri|scripts|out|\.next|node_modules)/,
+      })
+    );
+    
+    // Excluir archivos grandes o problemáticos del análisis
+    config.module = config.module || {};
+    config.module.rules = config.module.rules || [];
+    
     return config;
   },
+  // Deshabilitar build tracing problemático en Vercel
+  ...(process.env.VERCEL === '1' && {
+    outputFileTracingExcludes: {
+      '*': [
+        'src-tauri/**/*',
+        'scripts/**/*',
+        '*.md',
+        'Dockerfile',
+        'docker-compose*.yml',
+        'out/**/*',
+        '.dockerignore',
+        '.ngrok.env',
+        '.docker.env*',
+      ],
+    },
+  }),
 }
 
 // Configuración para Tauri - exportar como estático
