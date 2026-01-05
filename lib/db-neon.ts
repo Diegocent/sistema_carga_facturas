@@ -1,6 +1,16 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
 // SQLite solo se usa para migración en desarrollo local (no en producción web)
-import Database from 'better-sqlite3';
+// Importación condicional: solo en desarrollo local, no en Vercel/producción web
+let Database: any = null;
+try {
+  // Solo intentar importar en desarrollo local (no en Vercel)
+  if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
+    Database = require('better-sqlite3');
+  }
+} catch (e) {
+  // better-sqlite3 no está disponible (normal en Vercel)
+  Database = null;
+}
 import path from 'path';
 import fs from 'fs';
 
@@ -80,6 +90,12 @@ async function migrarSQLiteANeon(): Promise<void> {
   }
 
   console.log('[MIGRACIÓN] Iniciando migración de SQLite a Neon PostgreSQL...');
+  
+  // Verificar que better-sqlite3 esté disponible
+  if (!Database) {
+    console.log('[MIGRACIÓN] better-sqlite3 no está disponible (entorno web), omitiendo migración');
+    return;
+  }
   
   try {
     // Abrir base de datos SQLite
