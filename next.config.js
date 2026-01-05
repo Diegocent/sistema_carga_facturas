@@ -7,10 +7,6 @@ const nextConfig = {
   // Evitar problemas de build tracing
   experimental: {
     serverComponentsExternalPackages: ['better-sqlite3'],
-    // En Vercel, usar standalone output que evita algunos problemas de tracing
-    ...(process.env.VERCEL === '1' && {
-      outputFileTracingRoot: process.cwd(),
-    }),
   },
   // Excluir directorios del build tracing para evitar stack overflow
   webpack: (config, { isServer, webpack }) => {
@@ -47,6 +43,10 @@ if (isTauri) {
 // En Vercel, usar output standalone para evitar problemas de tracing
 if (process.env.VERCEL === '1' && !isTauri) {
   nextConfig.output = 'standalone';
+  // Deshabilitar optimización de imágenes que puede causar problemas con sharp
+  nextConfig.images = {
+    unoptimized: false,
+  };
 }
 
 module.exports = nextConfig
