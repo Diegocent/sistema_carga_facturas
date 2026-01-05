@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gestion-imprenta-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  # Cloudflare Tunnel - Opción 1: URL Temporal (Rápido, sin configuración)
+  cloudflared-temp:
+    image: cloudflare/cloudflared:latest
+    container_name: gestion-imprenta-tunnel-temp
+    command: tunnel --no-autoupdate --url http://web:3000
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - app-network
+    profiles:
+      - temp  # Solo se ejecuta si usas: docker-compose --profile temp up
+
+  # Cloudflare Tunnel - Opción 2: Túnel Permanente (Requiere configuración)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: gestion-imprenta-tunnel
+    command: tunnel --no-autoupdate run gestion-imprenta
+    volumes:
+      # Montar configuración de Cloudflare Tunnel
+      - ${CLOUDFLARE_CONFIG_DIR:-~/.cloudflared}:/etc/cloudflared:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - app-network
+    profiles:
+      - permanent  # Solo se ejecuta si usas: docker-compose --profile permanent up
+
+networks:
+  app-network:
+    driver: bridge
+

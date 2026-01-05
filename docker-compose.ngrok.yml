@@ -1,0 +1,45 @@
+# Docker Compose con Ngrok como alternativa a Cloudflare Tunnel
+# Ngrok es más confiable para URLs temporales
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gestion-imprenta-web
+    env_file:
+      - .docker.env
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+    ports:
+      - "3000:3000"
+
+  # Ngrok - Alternativa más confiable que Cloudflare Tunnel para URLs temporales
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: gestion-imprenta-ngrok
+    command: http web:3000 --log=stdout
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+    env_file:
+      - .ngrok.env
+    # Los logs mostrarán la URL de ngrok (sin página de advertencia)
+
+networks:
+  app-network:
+    driver: bridge
+

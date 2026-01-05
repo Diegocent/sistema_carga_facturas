@@ -1,0 +1,31 @@
+[package]
+name = "gestion-imprenta"
+version = "0.2.3"
+description = "Sistema de Gestión de Facturas"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.5", features = [ "fs-remove-dir", "window-close", "window-start-dragging", "window-minimize", "fs-read-dir", "fs-read-file", "fs-remove-file", "dialog-open", "fs-write-file", "window-show", "fs-create-dir", "fs-rename-file", "fs-copy-file", "window-unminimize", "window-unmaximize", "fs-exists", "dialog-save", "window-maximize", "window-hide", "shell-open"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.30", features = ["bundled"] }
+app_dirs2 = "2.5"
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7"
+native-tls = "0.2"
+postgres-native-tls = "0.5"
+lazy_static = "1.4"
+chrono = "0.4"
+
+[features]
+# This feature is used for production builds or when `devPath` points to the filesystem
+custom-protocol = ["tauri/custom-protocol"]
+

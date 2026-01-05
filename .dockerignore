@@ -1,0 +1,65 @@
+# Dependencias
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Archivos de build
+.next
+out
+dist
+build
+
+# Archivos de Tauri (no necesarios para web)
+src-tauri
+*.exe
+*.msi
+*.dmg
+*.AppImage
+
+# Archivos de desarrollo
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Archivos de SQLite (solo para Tauri, no para web)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+facturas.db
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Archivos de IDE
+.vscode
+.idea
+*.sublime-*
+
+# Archivos de Git
+.git
+.gitignore
+
+# Archivos de documentación
+*.md
+!README.md
+
+# Archivos de scripts (no necesarios en producción)
+scripts
+
+# Archivos de logs
+*.log
+logs
+
+# Archivos temporales
+tmp
+temp
+.cache
+
+# Cloudflare Tunnel (se monta como volumen)
+.cloudflared

@@ -1,0 +1,46 @@
+# Docker Compose con LocalTunnel - La alternativa más simple
+# LocalTunnel no requiere cuenta, no tiene problemas de DNS, y funciona inmediatamente
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gestion-imprenta-web
+    env_file:
+      - .docker.env
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+    ports:
+      - "3000:3000"
+
+  # LocalTunnel - La alternativa más simple y confiable
+  # No requiere cuenta, no tiene problemas de DNS
+  localtunnel:
+    image: node:20-alpine
+    container_name: gestion-imprenta-tunnel
+    command: sh -c "npm install -g localtunnel && lt --port 3000 --subdomain gestion-imprenta"
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+    # Los logs mostrarán la URL: https://gestion-imprenta.loca.lt
+    # Nota: La primera vez que alguien accede desde un navegador, verá una página de advertencia
+    # La contraseña es tu IP pública. Para evitarlo, puedes usar un User-Agent personalizado
+
+networks:
+  app-network:
+    driver: bridge
+

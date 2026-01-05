@@ -1,0 +1,511 @@
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use rusqlite::{Connection, params};
+use serde::{Deserialize, Serialize};
+use app_dirs2::{AppDataType, app_root};
+use tokio::runtime::Runtime;
+use native_tls::TlsConnector;
+use postgres_native_tls::MakeTlsConnector;
+
+// URL de conexión a Neon PostgreSQL
+const DATABASE_URL: &str = "postgresql://neondb_owner:npg_Kt4oRPeVIE0a@ep-polished-hall-adp92fza-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Factura {
+    id: Option<i64>,
+    numero_factura: String,
+    fecha_emision: String,
+    nombre_cliente: String,
+    ruc: String,
+    es_persona_juridica: bool,
+    cantidad: String,
+    descripcion: Option<String>,
+    costo_final: Option<String>,
+    es_anulada: bool,
+    created_at: Option<String>,
+}
+
+// Runtime global para ejecutar código async
+lazy_static::lazy_static! {
+    static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
+}
+
+// Helper para crear conexión
+fn connect_to_neon() -> Result<(tokio_postgres::Client, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>> {
+    let connector = TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let tls = MakeTlsConnector::new(connector);
+    
+    let (client, connection) = RUNTIME.block_on(async {
+        tokio_postgres::connect(DATABASE_URL, tls).await
+    })?;
+    
+    let connection_handle = RUNTIME.spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("[NEON ERROR] Error de conexión: {}", e);
+        }
+    });
+    
+    Ok((client, connection_handle))
+}
+
+// Crear tabla en Neon si no existe
+fn create_table_neon() -> Result<(), Box<dyn std::error::Error>> {
+    println!("[NEON] Verificando/creando tabla facturas...");
+    
+    let (client, _handle) = connect_to_neon()?;
+    
+    RUNTIME.block_on(async {
+        client.execute(
+            "CREATE TABLE IF NOT EXISTS facturas (
+                id SERIAL PRIMARY KEY,
+                numero_factura TEXT NOT NULL UNIQUE,
+                fecha_emision TEXT,
+                nombre_cliente TEXT,
+                ruc TEXT,
+                es_persona_juridica BOOLEAN NOT NULL DEFAULT true,
+                cantidad TEXT,
+                descripcion TEXT,
+                costo_final TEXT,
+                es_anulada BOOLEAN NOT NULL DEFAULT false,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            &[],
+        ).await?;
+        Ok::<(), tokio_postgres::Error>(())
+    })?;
+    
+    println!("[NEON] Tabla facturas verificada/creada exitosamente");
+    Ok(())
+}
+
+// Obtener ruta de SQLite local
+fn get_sqlite_path() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let app_dir = app_root(AppDataType::UserData, &app_dirs2::AppInfo {
+        name: "gestion-imprenta",
+        author: "gestion-imprenta",
+    })?;
+    std::fs::create_dir_all(&app_dir)?;
+    Ok(app_dir.join("facturas.db"))
+}
+
+// Verificar si existe SQLite local
+fn existe_sqlite() -> bool {
+    match get_sqlite_path() {
+        Ok(path) => path.exists(),
+        Err(_) => false,
+    }
+}
+
+// Verificar si ya se migró (marcador de migración)
+fn ya_migrado() -> bool {
+    match get_sqlite_path() {
+        Ok(path) => {
+            let marker = path.with_file_name(".migracion-completada");
+            marker.exists()
+        },
+        Err(_) => false,
+    }
+}
+
+// Migrar datos de SQLite a Neon
+fn migrar_sqlite_a_neon() -> Result<(), Box<dyn std::error::Error>> {
+    println!("[MIGRACIÓN] Iniciando migración de SQLite a Neon PostgreSQL...");
+    
+    let sqlite_path = get_sqlite_path()?;
+    if !sqlite_path.exists() {
+        println!("[MIGRACIÓN] No se encontró base de datos SQLite, omitiendo migración");
+        return Ok(());
+    }
+    
+    if ya_migrado() {
+        println!("[MIGRACIÓN] La migración ya se realizó anteriormente, omitiendo");
+        return Ok(());
+    }
+    
+    println!("[MIGRACIÓN] Abriendo base de datos SQLite...");
+    let sqlite_conn = Connection::open(&sqlite_path)?;
+    
+    let mut stmt = sqlite_conn.prepare("SELECT * FROM facturas ORDER BY id")?;
+    let facturas: Result<Vec<_>, _> = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, Option<i64>>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, i32>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<String>>(8)?,
+            row.get::<_, i32>(9)?,
+            row.get::<_, Option<String>>(10)?,
+        ))
+    })?.collect();
+    
+    let facturas = facturas?;
+    println!("[MIGRACIÓN] Encontradas {} facturas en SQLite", facturas.len());
+    
+    if facturas.is_empty() {
+        println!("[MIGRACIÓN] No hay datos para migrar");
+        let marker = sqlite_path.with_file_name(".migracion-completada");
+        std::fs::write(&marker, chrono::Utc::now().to_rfc3339())?;
+        return Ok(());
+    }
+    
+    let (client, _handle) = connect_to_neon()?;
+    
+    // Verificar si ya hay datos en Neon
+    let count: i64 = RUNTIME.block_on(async {
+        let row = client.query_one("SELECT COUNT(*) as count FROM facturas", &[]).await?;
+        Ok::<i64, tokio_postgres::Error>(row.get::<_, i64>(0))
+    })?;
+    
+    if count > 0 {
+        println!("[MIGRACIÓN] Ya existen {} facturas en Neon, omitiendo migración", count);
+        let marker = sqlite_path.with_file_name(".migracion-completada");
+        std::fs::write(&marker, chrono::Utc::now().to_rfc3339())?;
+        return Ok(());
+    }
+    
+    println!("[MIGRACIÓN] Migrando facturas a Neon...");
+    let facturas_clone = facturas.clone();
+    
+    RUNTIME.block_on(async {
+        let trans = client.transaction().await?;
+        let mut migradas = 0;
+        
+        for factura in &facturas_clone {
+            let (_id, numero_factura, fecha_emision, nombre_cliente, ruc, es_persona_juridica, cantidad, descripcion, costo_final, es_anulada, created_at) = factura;
+            
+            match trans.execute(
+                "INSERT INTO facturas (numero_factura, fecha_emision, nombre_cliente, ruc, 
+                 es_persona_juridica, cantidad, descripcion, costo_final, es_anulada, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 ON CONFLICT (numero_factura) DO NOTHING",
+                &[
+                    numero_factura,
+                    fecha_emision.as_deref(),
+                    nombre_cliente.as_deref(),
+                    ruc.as_deref(),
+                    &(*es_persona_juridica != 0),
+                    cantidad.as_deref(),
+                    descripcion.as_deref(),
+                    costo_final.as_deref(),
+                    &(*es_anulada != 0),
+                    created_at.as_deref(),
+                ],
+            ).await {
+                Ok(_) => migradas += 1,
+                Err(e) => {
+                    println!("[MIGRACIÓN ERROR] Error al migrar factura {}: {}", numero_factura, e);
+                }
+            }
+        }
+        
+        trans.commit().await?;
+        println!("[MIGRACIÓN] Migración completada: {} de {} facturas migradas", migradas, facturas_clone.len());
+        Ok::<(), tokio_postgres::Error>(())
+    })?;
+    
+    let marker = sqlite_path.with_file_name(".migracion-completada");
+    std::fs::write(&marker, chrono::Utc::now().to_rfc3339())?;
+    println!("[MIGRACIÓN] Marcador de migración creado");
+    
+    Ok(())
+}
+
+// Inicializar base de datos Neon
+fn init_neon_db() -> Result<(), Box<dyn std::error::Error>> {
+    println!("[NEON] Inicializando base de datos Neon...");
+    
+    create_table_neon()?;
+    
+    if existe_sqlite() && !ya_migrado() {
+        if let Err(e) = migrar_sqlite_a_neon() {
+            println!("[MIGRACIÓN ERROR] Error durante la migración: {}", e);
+        }
+    }
+    
+    println!("[NEON] Inicialización completada");
+    Ok(())
+}
+
+// Obtener todas las facturas
+#[tauri::command]
+fn get_facturas() -> Result<Vec<Factura>, String> {
+    println!("[TAURI] Comando get_facturas llamado");
+    let start_time = std::time::Instant::now();
+    
+    if let Err(e) = init_neon_db() {
+        return Err(format!("Error al inicializar base de datos: {}", e));
+    }
+    
+    let (client, _handle) = connect_to_neon().map_err(|e| format!("Error al conectar: {}", e))?;
+    
+    let rows = RUNTIME.block_on(async {
+        client.query(
+            "SELECT id, numero_factura, fecha_emision, nombre_cliente, ruc, 
+             es_persona_juridica, cantidad, descripcion, costo_final, es_anulada, created_at
+             FROM facturas ORDER BY 
+             CASE 
+               WHEN CAST(numero_factura AS INTEGER) IS NULL THEN 999999999
+               ELSE CAST(numero_factura AS INTEGER)
+             END DESC, 
+             numero_factura DESC",
+            &[],
+        ).await
+    }).map_err(|e| format!("Error al consultar facturas: {}", e))?;
+    
+    let mut facturas = Vec::new();
+    for row in rows {
+        facturas.push(Factura {
+            id: row.get(0),
+            numero_factura: row.get(1),
+            fecha_emision: row.get::<_, Option<String>>(2).unwrap_or_default(),
+            nombre_cliente: row.get::<_, Option<String>>(3).unwrap_or_default(),
+            ruc: row.get::<_, Option<String>>(4).unwrap_or_default(),
+            es_persona_juridica: row.get(5),
+            cantidad: row.get::<_, Option<String>>(6).unwrap_or_default(),
+            descripcion: row.get(7),
+            costo_final: row.get(8),
+            es_anulada: row.get(9),
+            created_at: row.get::<_, Option<String>>(10),
+        });
+    }
+    
+    let duration = start_time.elapsed();
+    println!("[TAURI] get_facturas completado: {} facturas en {:?}", facturas.len(), duration);
+    Ok(facturas)
+}
+
+// Crear nueva factura
+#[tauri::command]
+fn create_factura(factura: Factura) -> Result<Factura, String> {
+    println!("[TAURI] Comando create_factura llamado para número: {}", factura.numero_factura);
+    let start_time = std::time::Instant::now();
+    
+    if let Err(e) = init_neon_db() {
+        return Err(format!("Error al inicializar base de datos: {}", e));
+    }
+    
+    let es_anulada = factura.es_anulada || (factura.descripcion.is_none() && factura.costo_final.is_none());
+    println!("[TAURI] Factura marcada como anulada: {}", es_anulada);
+    
+    let fecha_emision_val: Option<String> = if es_anulada {
+        None
+    } else if factura.fecha_emision.is_empty() {
+        None
+    } else {
+        Some(factura.fecha_emision)
+    };
+    
+    let nombre_cliente_val = if es_anulada && factura.nombre_cliente.is_empty() {
+        "ANULADA".to_string()
+    } else {
+        factura.nombre_cliente
+    };
+    
+    let ruc_val = if es_anulada && factura.ruc.is_empty() {
+        "00000000-0".to_string()
+    } else {
+        factura.ruc
+    };
+    
+    let cantidad_val = if es_anulada {
+        "".to_string()
+    } else {
+        factura.cantidad
+    };
+    
+    let (client, _handle) = connect_to_neon().map_err(|e| format!("Error al conectar: {}", e))?;
+    
+    let row = RUNTIME.block_on(async {
+        // Verificar existencia
+        let exists_result = client.query_opt(
+            "SELECT COUNT(*) FROM facturas WHERE numero_factura = $1",
+            &[&factura.numero_factura],
+        ).await?;
+        
+        if let Some(exists_row) = exists_result {
+            let count: i64 = exists_row.get(0);
+            if count > 0 {
+                return Err(tokio_postgres::Error::__private_api_timeout());
+            }
+        }
+        
+        // Insertar
+        client.query_one(
+            "INSERT INTO facturas (numero_factura, fecha_emision, nombre_cliente, ruc, 
+             es_persona_juridica, cantidad, descripcion, costo_final, es_anulada)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id, numero_factura, fecha_emision, nombre_cliente, ruc, 
+             es_persona_juridica, cantidad, descripcion, costo_final, es_anulada, created_at",
+            &[
+                &factura.numero_factura,
+                &fecha_emision_val.as_deref(),
+                &nombre_cliente_val,
+                &ruc_val,
+                &factura.es_persona_juridica,
+                &cantidad_val,
+                &factura.descripcion,
+                &factura.costo_final,
+                &es_anulada,
+            ],
+        ).await
+    });
+    
+    let row = match row {
+        Ok(r) => r,
+        Err(e) => {
+            if e.to_string().contains("unique constraint") || e.to_string().contains("numero_factura") {
+                return Err(format!("Ya existe una factura con este número: {}", factura.numero_factura));
+            }
+            return Err(format!("Error al insertar factura: {}", e));
+        }
+    };
+    
+    let nueva_factura = Factura {
+        id: row.get(0),
+        numero_factura: row.get(1),
+        fecha_emision: row.get::<_, Option<String>>(2).unwrap_or_default(),
+        nombre_cliente: row.get::<_, Option<String>>(3).unwrap_or_default(),
+        ruc: row.get::<_, Option<String>>(4).unwrap_or_default(),
+        es_persona_juridica: row.get(5),
+        cantidad: row.get::<_, Option<String>>(6).unwrap_or_default(),
+        descripcion: row.get(7),
+        costo_final: row.get(8),
+        es_anulada: row.get(9),
+        created_at: row.get::<_, Option<String>>(10),
+    };
+    
+    let duration = start_time.elapsed();
+    println!("[TAURI] create_factura completado exitosamente en {:?}", duration);
+    Ok(nueva_factura)
+}
+
+// Actualizar factura existente
+#[tauri::command]
+fn update_factura(id: i64, factura: Factura) -> Result<Factura, String> {
+    println!("[TAURI] Comando update_factura llamado para ID: {}", id);
+    
+    if let Err(e) = init_neon_db() {
+        return Err(format!("Error al inicializar base de datos: {}", e));
+    }
+    
+    let es_anulada = factura.es_anulada;
+    let (client, _handle) = connect_to_neon().map_err(|e| format!("Error al conectar: {}", e))?;
+    
+    if es_anulada {
+        RUNTIME.block_on(async {
+            client.execute(
+                "UPDATE facturas SET numero_factura = $1, es_anulada = true, fecha_emision = NULL, cantidad = '' WHERE id = $2",
+                &[&factura.numero_factura, &id],
+            ).await
+        }).map_err(|e| format!("Error al actualizar factura: {}", e))?;
+    } else {
+        RUNTIME.block_on(async {
+            client.execute(
+                "UPDATE facturas SET 
+                 numero_factura = $1, fecha_emision = $2, nombre_cliente = $3, ruc = $4,
+                 es_persona_juridica = $5, cantidad = $6, descripcion = $7, costo_final = $8, es_anulada = false
+                 WHERE id = $9",
+                &[
+                    &factura.numero_factura,
+                    &factura.fecha_emision,
+                    &factura.nombre_cliente,
+                    &factura.ruc,
+                    &factura.es_persona_juridica,
+                    &factura.cantidad,
+                    &factura.descripcion,
+                    &factura.costo_final,
+                    &id,
+                ],
+            ).await
+        }).map_err(|e| format!("Error al actualizar factura: {}", e))?;
+    }
+    
+    let row = RUNTIME.block_on(async {
+        client.query_one(
+            "SELECT id, numero_factura, fecha_emision, nombre_cliente, ruc, 
+             es_persona_juridica, cantidad, descripcion, costo_final, es_anulada, created_at
+             FROM facturas WHERE id = $1",
+            &[&id],
+        ).await
+    }).map_err(|e| format!("Error al obtener factura actualizada: {}", e))?;
+    
+    Ok(Factura {
+        id: row.get(0),
+        numero_factura: row.get(1),
+        fecha_emision: row.get::<_, Option<String>>(2).unwrap_or_default(),
+        nombre_cliente: row.get::<_, Option<String>>(3).unwrap_or_default(),
+        ruc: row.get::<_, Option<String>>(4).unwrap_or_default(),
+        es_persona_juridica: row.get(5),
+        cantidad: row.get::<_, Option<String>>(6).unwrap_or_default(),
+        descripcion: row.get(7),
+        costo_final: row.get(8),
+        es_anulada: row.get(9),
+        created_at: row.get::<_, Option<String>>(10),
+    })
+}
+
+// Obtener siguiente número de factura
+#[tauri::command]
+fn get_siguiente_numero() -> Result<String, String> {
+    println!("[TAURI] Comando get_siguiente_numero llamado");
+    let start_time = std::time::Instant::now();
+    
+    if let Err(e) = init_neon_db() {
+        return Err(format!("Error al inicializar base de datos: {}", e));
+    }
+    
+    let (client, _handle) = connect_to_neon().map_err(|e| format!("Error al conectar: {}", e))?;
+    
+    let rows = RUNTIME.block_on(async {
+        client.query(
+            "SELECT numero_factura FROM facturas ORDER BY id DESC LIMIT 100",
+            &[],
+        ).await
+    }).map_err(|e| format!("Error al consultar números: {}", e))?;
+    
+    let mut max_numero = 0;
+    let mut processed = 0;
+    for row in rows {
+        processed += 1;
+        let num_str: String = row.get(0);
+        if let Ok(num) = num_str.parse::<i32>() {
+            if num > max_numero {
+                max_numero = num;
+            }
+        } else {
+            let num_str_clean: String = num_str.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !num_str_clean.is_empty() {
+                if let Ok(num) = num_str_clean.parse::<i32>() {
+                    if num > max_numero {
+                        max_numero = num;
+                    }
+                }
+            }
+        }
+    }
+    
+    let siguiente_numero = (max_numero + 1).to_string();
+    let duration = start_time.elapsed();
+    println!("[TAURI] get_siguiente_numero completado: {} (procesadas {} facturas) en {:?}", siguiente_numero, processed, duration);
+    Ok(siguiente_numero)
+}
+
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            get_facturas,
+            create_factura,
+            update_factura,
+            get_siguiente_numero
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+

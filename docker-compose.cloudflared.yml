@@ -1,0 +1,49 @@
+# Docker Compose con Cloudflare Tunnel integrado
+# Este archivo incluye la aplicación web + Cloudflare Tunnel
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gestion-imprenta-web
+    env_file:
+      - .docker.env
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+    ports:
+      - "3000:3000"  # Exponer puerto para acceso local
+
+  # Cloudflare Tunnel - URL Temporal (Más fácil, sin configuración)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: gestion-imprenta-tunnel
+    command: tunnel --no-autoupdate --url http://web:3000
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    # Configurar variables de entorno para mejor conectividad
+    environment:
+      - TUNNEL_TRANSPORT_PROTOCOL=quic
+    # Los logs mostrarán la URL temporal generada
+
+networks:
+  app-network:
+    driver: bridge
+
