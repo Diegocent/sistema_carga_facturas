@@ -8,6 +8,28 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['better-sqlite3'],
   },
+  // Excluir directorios del build tracing para evitar stack overflow
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+      };
+    }
+    // Ignorar archivos problemáticos durante el build
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: [
+        '**/src-tauri/**',
+        '**/scripts/**',
+        '**/*.md',
+        '**/Dockerfile',
+        '**/docker-compose*.yml',
+      ],
+    };
+    return config;
+  },
 }
 
 // Configuración para Tauri - exportar como estático
