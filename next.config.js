@@ -4,10 +4,10 @@ const isTauri = process.env.TAURI_BUILD === 'true';
 
 const nextConfig = {
   reactStrictMode: true,
-  // Evitar problemas de build tracing
-  experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3'],
-  },
+  // En Next.js 16, serverComponentsExternalPackages se movió fuera de experimental
+  serverExternalPackages: ['better-sqlite3'],
+  // Configurar Turbopack (Next.js 16 lo usa por defecto)
+  turbopack: {},
   // Excluir directorios del build tracing para evitar stack overflow
   webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
