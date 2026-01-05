@@ -118,16 +118,22 @@ export async function PUT(
         // Solo actualizar número de factura y marca como anulada, NO guardar fecha (NULL), cantidad vacío
         const stmt = db.prepare(`
           UPDATE facturas 
-          SET numero_factura = ?, es_anulada = 1, fecha_emision = NULL, cantidad = ''
+          SET numero_factura = ?, es_anulada = ?, fecha_emision = ?, cantidad = ?
           WHERE id = ?
         `);
-        await stmt.run([numero_factura, id]);
+        await stmt.run([
+          numero_factura,
+          true, // es_anulada = 1
+          null, // fecha_emision = NULL
+          '',   // cantidad = ''
+          id
+        ]);
       } else {
         // Actualizar todos los campos para facturas no anuladas
         const stmt = db.prepare(`
           UPDATE facturas 
           SET numero_factura = ?, fecha_emision = ?, nombre_cliente = ?, ruc = ?,
-              es_persona_juridica = ?, cantidad = ?, descripcion = ?, costo_final = ?, es_anulada = 0
+              es_persona_juridica = ?, cantidad = ?, descripcion = ?, costo_final = ?, es_anulada = ?
           WHERE id = ?
         `);
         await stmt.run([
@@ -135,10 +141,11 @@ export async function PUT(
           fechaEmisionValor,
           nombreClienteValor,
           rucValor,
-          es_persona_juridica,
+          es_persona_juridica === true || es_persona_juridica === 1 || es_persona_juridica === 'true',
           cantidadValor,
           descripcion || null,
           costo_final || null,
+          false, // es_anulada = 0
           id
         ]);
       }
