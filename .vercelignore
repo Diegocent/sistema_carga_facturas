@@ -25,4 +25,7 @@ NOTA*.md
 TAURI*.md
 RESUMEN*.md
 start-cloudflare-tunnel.*
+# Excluir directorio target de Rust que puede causar problemas
+src-tauri/target/
+src-tauri/gen/
 
