@@ -61,7 +61,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchingRUC, setSearchingRUC] = useState(false);
-  const [migrando, setMigrando] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -334,9 +333,29 @@ export default function Home() {
             setMessage({ type: 'error', text: error || 'Error al actualizar factura' });
           }
         } else {
-          // Para desarrollo, necesitaríamos crear una ruta PUT /api/facturas/[id]/route.ts
-          // Por ahora, mostrar error indicando que en desarrollo no está implementado
-          setMessage({ type: 'error', text: 'La edición de facturas solo está disponible en la versión de Tauri. En desarrollo, usa la versión de Tauri.' });
+          // Usar API REST para actualizar factura en versión web
+          try {
+            const response = await fetch(`/api/facturas/${editingId}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(facturaData),
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              setMessage({ type: 'success', text: 'Factura actualizada exitosamente' });
+              setEditingId(null);
+              handleCancelEdit();
+              cargarFacturas();
+            } else {
+              setMessage({ type: 'error', text: result.error || 'Error al actualizar factura' });
+            }
+          } catch (error: any) {
+            setMessage({ type: 'error', text: error.message || 'Error al actualizar factura' });
+          }
         }
       } else {
         // Crear nueva factura
@@ -405,35 +424,6 @@ export default function Home() {
       setMessage({ type: 'error', text: 'Error al guardar factura' });
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const migrarANeon = async () => {
-    if (!isTauri) {
-      setMessage({ type: 'error', text: 'La migración solo está disponible en la aplicación Tauri' });
-      return;
-    }
-
-    try {
-      setMigrando(true);
-      setMessage(null);
-      
-      const { invoke } = await import('@tauri-apps/api/tauri');
-      logInfo('frontend', 'Iniciando migración a Neon');
-      
-      const resultado = await invoke<string>('migrar_a_neon');
-      
-      logInfo('frontend', 'Migración completada', { resultado });
-      setMessage({ type: 'success', text: resultado });
-      
-      // Recargar facturas después de la migración
-      await cargarFacturas();
-    } catch (error: any) {
-      const errorMessage = error?.message || error?.toString() || 'Error desconocido';
-      logError('frontend', 'Error al migrar a Neon', { error: errorMessage });
-      setMessage({ type: 'error', text: `Error al migrar: ${errorMessage}` });
-    } finally {
-      setMigrando(false);
     }
   };
 
@@ -869,17 +859,6 @@ export default function Home() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h2>Facturas Registradas ({facturas.length})</h2>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {isTauri && (
-              <button 
-                onClick={migrarANeon} 
-                className="btn btn-secondary"
-                disabled={migrando}
-                style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
-                title="Migrar datos de SQLite a Neon PostgreSQL"
-              >
-                {migrando ? 'Migrando...' : '🔄 Migrar a Neon'}
-              </button>
-            )}
             <button 
               onClick={() => setShowLogs(true)} 
               className="btn btn-secondary"
@@ -1046,33 +1025,8 @@ function LogsViewer({ filter, onFilterChange, onClose }: {
   onClose: () => void;
 }) {
   const [logs, setLogs] = useState<any[]>([]);
-  const [tauriLogs, setTauriLogs] = useState<any[]>([]);
-  const [showTauriLogs, setShowTauriLogs] = useState(false);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined;
-
-  const loadTauriLogs = useCallback(async () => {
-    if (!isTauri) return;
-    
-    try {
-      const { invoke } = await import('@tauri-apps/api/tauri');
-      const tauriLogsData = await invoke<any[]>('get_tauri_logs');
-      
-      // Convertir logs de Tauri al formato del visor
-      const convertedLogs = tauriLogsData.map((log: any) => ({
-        timestamp: log.timestamp,
-        level: log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'info',
-        category: 'tauri' as const,
-        message: log.message,
-        data: null
-      }));
-      
-      setTauriLogs(convertedLogs);
-    } catch (error) {
-      console.error('Error al cargar logs de Tauri:', error);
-    }
-  }, [isTauri]);
 
   useEffect(() => {
     const loadLogs = async () => {
@@ -1087,11 +1041,6 @@ function LogsViewer({ filter, onFilterChange, onClose }: {
           limit: 500
         });
         setLogs(filteredLogs);
-        
-        // Cargar logs de Tauri si estamos en Tauri
-        if (isTauri) {
-          await loadTauriLogs();
-        }
       } catch (error) {
         console.error('Error al cargar logs:', error);
       } finally {
@@ -1099,17 +1048,7 @@ function LogsViewer({ filter, onFilterChange, onClose }: {
       }
     };
     loadLogs();
-    
-    // Refrescar logs cada 2 segundos si estamos mostrando logs de Tauri
-    let interval: NodeJS.Timeout | null = null;
-    if (isTauri && showTauriLogs) {
-      interval = setInterval(loadTauriLogs, 2000);
-    }
-    
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [filter, showTauriLogs, isTauri, loadTauriLogs]);
+  }, [filter]);
 
   const handleDownload = async () => {
     const { downloadLogs } = await import('@/lib/logger');
@@ -1232,39 +1171,6 @@ function LogsViewer({ filter, onFilterChange, onClose }: {
         <button onClick={handleClear} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}>
           Limpiar
         </button>
-        {isTauri && (
-          <>
-            <button 
-              onClick={() => {
-                setShowTauriLogs(!showTauriLogs);
-                if (!showTauriLogs) {
-                  loadTauriLogs();
-                }
-              }} 
-              className="btn btn-secondary" 
-              style={{ fontSize: '0.875rem', padding: '0.5rem 1rem', backgroundColor: showTauriLogs ? '#2563eb' : undefined }}
-            >
-              {showTauriLogs ? '📋 Ocultar Logs Tauri' : '📋 Ver Logs Tauri'}
-            </button>
-            {showTauriLogs && (
-              <button 
-                onClick={async () => {
-                  try {
-                    const { invoke } = await import('@tauri-apps/api/tauri');
-                    await invoke('clear_tauri_logs');
-                    await loadTauriLogs();
-                  } catch (error) {
-                    console.error('Error al limpiar logs de Tauri:', error);
-                  }
-                }} 
-                className="btn btn-secondary" 
-                style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
-              >
-                Limpiar Logs Tauri
-              </button>
-            )}
-          </>
-        )}
       </div>
 
       {/* Lista de logs */}
@@ -1276,12 +1182,12 @@ function LogsViewer({ filter, onFilterChange, onClose }: {
         padding: '0.5rem',
         backgroundColor: '#f9fafb',
       }}>
-        {(showTauriLogs ? tauriLogs : logs).length === 0 ? (
+        {logs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>
-            {showTauriLogs ? 'No hay logs de Tauri para mostrar' : 'No hay logs para mostrar'}
+            No hay logs para mostrar
           </div>
         ) : (
-          (showTauriLogs ? tauriLogs : logs).map((log, index) => (
+          logs.map((log, index) => (
             <div
               key={index}
               style={{
