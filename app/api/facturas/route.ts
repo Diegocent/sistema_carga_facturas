@@ -3,6 +3,10 @@ import db from '@/lib/db';
 import { Factura } from '@/types/factura';
 import { logInfo, logError, logWarn } from '@/lib/logger';
 
+// Forzar que esta ruta sea dinámica (no se ejecuta durante el build)
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // GET - Obtener todas las facturas o siguiente número de factura
 export async function GET(request: NextRequest) {
   try {

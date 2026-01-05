@@ -3,6 +3,10 @@ import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, Tex
 import db from '@/lib/db';
 import { Factura } from '@/types/factura';
 
+// Forzar que esta ruta sea dinámica (no se ejecuta durante el build)
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // Función auxiliar para parsear precios desde string (separados por salto de línea)
 // Acepta formato con punto como separador de miles: 8.000, 10.000, etc.
 function parsearPrecios(preciosString: string): number[] {

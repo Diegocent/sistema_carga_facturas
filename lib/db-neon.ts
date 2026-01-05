@@ -26,7 +26,8 @@ function initPool(): Pool {
   if (!pool) {
     // No crear pool durante el build
     const isBuildTime = process.env.TAURI_BUILD === 'true' || 
-                        process.env.NEXT_PHASE === 'phase-production-build';
+                        process.env.NEXT_PHASE === 'phase-production-build' ||
+                        process.env.VERCEL === '1' && process.env.NEXT_PHASE;
     
     if (isBuildTime) {
       throw new Error('No se puede inicializar pool durante el build');
@@ -250,7 +251,7 @@ export async function initNeonDb(): Promise<void> {
   // Detectamos build time verificando si estamos en proceso de construcción
   const isBuildTime = process.env.TAURI_BUILD === 'true' || 
                       process.env.NEXT_PHASE === 'phase-production-build' ||
-                      (typeof process !== 'undefined' && process.env.NODE_ENV === 'production' && !process.env.VERCEL);
+                      (process.env.VERCEL === '1' && process.env.NEXT_PHASE);
 
   // Si estamos en build time, no hacer nada
   if (isBuildTime) {

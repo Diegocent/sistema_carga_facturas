@@ -10,7 +10,8 @@ let initialized = false;
 async function ensureInitialized() {
   // No inicializar durante el build
   const isBuildTime = process.env.TAURI_BUILD === 'true' || 
-                      process.env.NEXT_PHASE === 'phase-production-build';
+                      process.env.NEXT_PHASE === 'phase-production-build' ||
+                      (process.env.VERCEL === '1' && process.env.NEXT_PHASE);
   
   if (isBuildTime) {
     return; // Omitir inicialización durante el build

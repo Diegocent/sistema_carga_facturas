@@ -4,6 +4,10 @@ const isTauri = process.env.TAURI_BUILD === 'true';
 
 const nextConfig = {
   reactStrictMode: true,
+  // Evitar problemas de build tracing
+  experimental: {
+    serverComponentsExternalPackages: ['better-sqlite3'],
+  },
 }
 
 // Configuración para Tauri - exportar como estático

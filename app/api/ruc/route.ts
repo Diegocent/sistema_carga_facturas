@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { consultarRUC } from '@/lib/ruc-api';
 
+// Forzar que esta ruta sea dinámica (no se ejecuta durante el build)
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // GET - Consultar información por RUC
 export async function GET(request: NextRequest) {
   try {
