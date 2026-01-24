@@ -539,6 +539,10 @@ export default function Home() {
               }),
               new TableCell({
                 children: [new Paragraph((() => {
+                  // Para facturas anuladas, fecha_emision puede ser null
+                  if (factura.es_anulada || !factura.fecha_emision || factura.fecha_emision.trim() === '') {
+                    return '-';
+                  }
                   // Parsear fecha en hora local para evitar problemas de zona horaria
                   const [year, month, day] = factura.fecha_emision.split('-').map(Number);
                   const date = new Date(year, month - 1, day);
