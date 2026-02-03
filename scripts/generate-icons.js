@@ -1,3 +1,10 @@
+/**
+ * Script para generar íconos de la aplicación Tauri.
+ * 
+ * Genera íconos en diferentes tamaños (32x32, 128x128, 256x256) y formatos
+ * (PNG, ICO para Windows, ICNS para macOS).
+ */
+
 const sharp = require('sharp');
 const toIco = require('to-ico');
 const fs = require('fs').promises;
@@ -6,12 +13,16 @@ const fsSync = require('fs');
 
 const iconsDir = path.join(__dirname, '../src-tauri/icons');
 
-// Crear directorio si no existe
 if (!fsSync.existsSync(iconsDir)) {
   fsSync.mkdirSync(iconsDir, { recursive: true });
 }
 
-// Función para crear un ícono simple con texto
+/**
+ * Crea un ícono simple con texto "GF" (Gestión de Facturas).
+ * 
+ * @param size - Tamaño del ícono en píxeles
+ * @param outputPath - Ruta donde guardar el ícono generado
+ */
 async function createIcon(size, outputPath) {
   const svg = `
     <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
@@ -28,16 +39,17 @@ async function createIcon(size, outputPath) {
   console.log(`✓ Created ${path.basename(outputPath)}`);
 }
 
+/**
+ * Función principal que genera todos los íconos necesarios para la aplicación.
+ */
 async function generateIcons() {
   console.log('Generando íconos...\n');
   
   try {
-    // Generar PNGs
     await createIcon(32, path.join(iconsDir, '32x32.png'));
     await createIcon(128, path.join(iconsDir, '128x128.png'));
     await createIcon(256, path.join(iconsDir, '128x128@2x.png'));
     
-    // Para Windows, crear ICO real con múltiples tamaños
     const icoPath = path.join(iconsDir, 'icon.ico');
     const ico16 = await sharp(path.join(iconsDir, '32x32.png')).resize(16, 16).png().toBuffer();
     const ico32 = await sharp(path.join(iconsDir, '32x32.png')).resize(32, 32).png().toBuffer();
@@ -48,7 +60,6 @@ async function generateIcons() {
     await fs.writeFile(icoPath, ico);
     console.log(`✓ Created icon.ico`);
     
-    // Para macOS, usar el PNG más grande como ICNS (Tauri lo manejará)
     const icnsPath = path.join(iconsDir, 'icon.icns');
     await sharp(path.join(iconsDir, '128x128@2x.png'))
       .resize(512, 512)

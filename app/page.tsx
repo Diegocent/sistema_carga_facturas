@@ -4,8 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { Factura } from '@/types/factura';
 import { logInfo, logError, logWarn } from '@/lib/logger';
 
-// Función auxiliar para parsear precios desde string (separados por salto de línea)
-// Acepta formato con punto como separador de miles: 8.000, 10.000, etc.
+/**
+ * Parsea precios desde un string que puede contener múltiples precios separados por salto de línea.
+ * Acepta formato con punto como separador de miles (ej: 8.000, 10.000) y coma como separador decimal.
+ * 
+ * @param preciosString - String con precios separados por salto de línea
+ * @returns Array de números parseados, filtrando valores inválidos o cero
+ */
 const parsearPrecios = (preciosString: string): number[] => {
   if (!preciosString || !preciosString.trim()) return [];
   return preciosString
@@ -13,18 +18,13 @@ const parsearPrecios = (preciosString: string): number[] => {
     .map(line => line.trim())
     .filter(line => line.length > 0)
     .map(line => {
-      // Remover espacios y caracteres no numéricos excepto punto y coma
       let cleaned = line.replace(/\s/g, '').replace(/[^\d.,]/g, '');
       
-      // Si tiene coma, asumimos formato decimal (ej: 8000,50)
       if (cleaned.includes(',')) {
         cleaned = cleaned.replace(/\./g, '').replace(',', '.');
       } else {
-        // Si solo tiene puntos, pueden ser separadores de miles (ej: 8.000)
-        // Contamos los puntos: si el último punto está seguido de 3 dígitos, es separador de miles
         const lastDotIndex = cleaned.lastIndexOf('.');
         if (lastDotIndex > 0 && cleaned.length - lastDotIndex === 4) {
-          // Es separador de miles, removemos todos los puntos
           cleaned = cleaned.replace(/\./g, '');
         }
       }
@@ -34,15 +34,19 @@ const parsearPrecios = (preciosString: string): number[] => {
     .filter(precio => precio > 0);
 };
 
-// Función auxiliar para formatear precios para mostrar
-// Muestra con punto como separador de miles
+/**
+ * Formatea precios para mostrar en la interfaz.
+ * Convierte números a formato con punto como separador de miles y prefijo "Gs.".
+ * 
+ * @param preciosString - String con precios separados por salto de línea
+ * @returns String formateado con precios separados por salto de línea, o "-" si no hay precios válidos
+ */
 const formatearPrecios = (preciosString: string): string => {
   if (!preciosString || !preciosString.trim()) return '-';
   const precios = parsearPrecios(preciosString);
   if (precios.length === 0) return '-';
   return precios
     .map(precio => {
-      // Formatear con punto como separador de miles
       const numero = Math.round(precio).toString();
       const formateado = numero.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
       return `Gs. ${formateado}`;
@@ -50,7 +54,12 @@ const formatearPrecios = (preciosString: string): string => {
     .join('\n');
 };
 
-// Función auxiliar para sumar todos los precios de una factura
+/**
+ * Suma todos los precios de una factura.
+ * 
+ * @param preciosString - String con precios separados por salto de línea
+ * @returns Suma total de todos los precios válidos
+ */
 const sumarPreciosFactura = (preciosString: string): number => {
   return parsearPrecios(preciosString).reduce((sum, precio) => sum + precio, 0);
 };
@@ -78,16 +87,18 @@ export default function Home() {
     es_anulada: false,
   });
 
-  // Detectar si estamos en Tauri
   const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined;
 
+  /**
+   * Carga el siguiente número de factura disponible.
+   * Utiliza comandos Tauri si está disponible, sino usa la API REST.
+   */
   const cargarSiguienteNumero = useCallback(async () => {
     try {
       logInfo('frontend', 'Iniciando carga de siguiente número de factura', { isTauri });
       let siguienteNumero = '1';
       
       if (isTauri) {
-        // Usar comando de Tauri
         const { invoke } = await import('@tauri-apps/api/tauri');
         logInfo('frontend', 'Llamando comando Tauri: get_siguiente_numero');
         try {
@@ -102,7 +113,6 @@ export default function Home() {
           throw tauriError;
         }
       } else {
-        // Usar API route
         logInfo('frontend', 'Consultando API route: /api/facturas?siguiente=true');
         const response = await fetch('/api/facturas?siguiente=true');
         logInfo('frontend', 'Respuesta recibida de API', { 
@@ -129,13 +139,16 @@ export default function Home() {
     }
   }, [isTauri]);
 
+  /**
+   * Carga todas las facturas desde la base de datos.
+   * Utiliza comandos Tauri si está disponible, sino usa la API REST.
+   */
   const cargarFacturas = useCallback(async () => {
     try {
       logInfo('frontend', 'Iniciando carga de facturas', { isTauri });
       setLoading(true);
       
       if (isTauri) {
-        // Usar comando de Tauri
         const { invoke } = await import('@tauri-apps/api/tauri');
         logInfo('frontend', 'Llamando comando Tauri: get_facturas');
         const startTime = Date.now();
@@ -160,11 +173,9 @@ export default function Home() {
             type: 'error', 
             text: `Error al cargar facturas: ${errorMessage}. Revisa los logs para más detalles.` 
           });
-          // No lanzar el error, solo mostrar el mensaje
           return;
         }
       } else {
-        // Usar API route
         logInfo('frontend', 'Consultando API route: /api/facturas');
         const startTime = Date.now();
         const response = await fetch('/api/facturas');
@@ -210,12 +221,15 @@ export default function Home() {
     }
   }, [isTauri]);
 
-  // Cargar facturas y siguiente número al montar el componente
   useEffect(() => {
     cargarFacturas();
     cargarSiguienteNumero();
   }, [cargarFacturas, cargarSiguienteNumero]);
 
+  /**
+   * Consulta información de un contribuyente por RUC.
+   * Utiliza la consulta directa a la API de TuRUC.
+   */
   const consultarRUC = async () => {
     if (!formData.ruc || formData.ruc.trim().length < 5) {
       setMessage({ type: 'error', text: 'Por favor ingrese un RUC válido (mínimo 5 dígitos)' });
@@ -227,8 +241,6 @@ export default function Home() {
       setMessage(null);
       
       const rucLimpio = formData.ruc.trim();
-      
-      // Siempre usar consulta directa al API de TuRUC según documentación
       const { consultarRUCDirecto } = await import('@/lib/ruc-client');
       const data = await consultarRUCDirecto(rucLimpio);
 
@@ -247,6 +259,11 @@ export default function Home() {
     }
   };
 
+  /**
+   * Prepara el formulario para editar una factura existente.
+   * 
+   * @param factura - Factura a editar
+   */
   const handleEdit = (factura: Factura) => {
     setEditingId(factura.id || null);
     setFormData({
@@ -260,10 +277,12 @@ export default function Home() {
       costo_final: factura.costo_final || '',
       es_anulada: factura.es_anulada || false,
     });
-    // Scroll al formulario
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  /**
+   * Cancela la edición y resetea el formulario.
+   */
   const handleCancelEdit = () => {
     setEditingId(null);
     cargarSiguienteNumero();
@@ -280,13 +299,17 @@ export default function Home() {
     });
   };
 
+  /**
+   * Maneja el envío del formulario para crear o actualizar una factura.
+   * 
+   * @param e - Evento del formulario
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setMessage(null);
 
     try {
-      // Si es anulada, solo validar número de factura
       if (formData.es_anulada) {
         if (!formData.numero_factura.trim()) {
           setMessage({ type: 'error', text: 'El número de factura es obligatorio' });
@@ -294,7 +317,6 @@ export default function Home() {
           return;
         }
       } else {
-        // Validaciones para facturas no anuladas
         if (!formData.numero_factura.trim() || !formData.fecha_emision || !formData.nombre_cliente.trim() || !formData.ruc.trim()) {
           setMessage({ type: 'error', text: 'Los campos básicos son obligatorios para facturas no anuladas' });
           setSubmitting(false);
@@ -320,7 +342,6 @@ export default function Home() {
       };
 
       if (editingId !== null) {
-        // Actualizar factura existente
         if (isTauri) {
           try {
             const { invoke } = await import('@tauri-apps/api/tauri');
@@ -333,7 +354,6 @@ export default function Home() {
             setMessage({ type: 'error', text: error || 'Error al actualizar factura' });
           }
         } else {
-          // Usar API REST para actualizar factura en versión web
           try {
             const response = await fetch(`/api/facturas/${editingId}`, {
               method: 'PUT',
@@ -365,7 +385,6 @@ export default function Home() {
             await invoke('create_factura', { factura: facturaData });
             setMessage({ type: 'success', text: 'Factura creada exitosamente' });
             
-            // Cargar el siguiente número de factura
             const siguienteNumero = await invoke('get_siguiente_numero') as string;
             
             setFormData({
@@ -384,7 +403,6 @@ export default function Home() {
             setMessage({ type: 'error', text: error || 'Error al crear factura' });
           }
         } else {
-          // Usar API route
           const response = await fetch('/api/facturas', {
             method: 'POST',
             headers: {
@@ -397,7 +415,6 @@ export default function Home() {
 
           if (data.success) {
             setMessage({ type: 'success', text: 'Factura creada exitosamente' });
-            // Cargar el siguiente número de factura
             const siguienteResponse = await fetch('/api/facturas?siguiente=true');
             const siguienteData = await siguienteResponse.json();
             const siguienteNumero = siguienteData.success ? siguienteData.siguiente_numero : '';
@@ -427,6 +444,10 @@ export default function Home() {
     }
   };
 
+  /**
+   * Genera un documento Word con todas las facturas registradas.
+   * El documento se descarga automáticamente en el navegador.
+   */
   const generarWord = async () => {
     try {
       if (facturas.length === 0) {
@@ -436,7 +457,6 @@ export default function Home() {
 
       console.log('[GenerarWord] Iniciando generación de Word con', facturas.length, 'facturas');
       
-      // Importar librería docx dinámicamente
       let Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, TextRun, AlignmentType;
       
       try {
@@ -457,7 +477,6 @@ export default function Home() {
         return;
       }
 
-      // Crear tabla con encabezados
       const tableRows: any[] = [
         new TableRow({
           children: [
@@ -529,7 +548,6 @@ export default function Home() {
         }),
       ];
 
-      // Agregar filas de datos usando las facturas actuales del estado
       facturas.forEach((factura) => {
         tableRows.push(
           new TableRow({
@@ -539,11 +557,9 @@ export default function Home() {
               }),
               new TableCell({
                 children: [new Paragraph((() => {
-                  // Para facturas anuladas, fecha_emision puede ser null
                   if (factura.es_anulada || !factura.fecha_emision || factura.fecha_emision.trim() === '') {
                     return '-';
                   }
-                  // Parsear fecha en hora local para evitar problemas de zona horaria
                   const [year, month, day] = factura.fecha_emision.split('-').map(Number);
                   const date = new Date(year, month - 1, day);
                   return date.toLocaleDateString('es-PY');
@@ -576,7 +592,6 @@ export default function Home() {
         );
       });
 
-      // Calcular total
       const total = facturas
         .filter(f => !f.es_anulada)
         .reduce((sum, factura) => sum + sumarPreciosFactura(factura.costo_final || ''), 0);
@@ -607,7 +622,6 @@ export default function Home() {
         })
       );
 
-      // Crear documento
       const doc = new Document({
         sections: [
           {
@@ -630,7 +644,6 @@ export default function Home() {
         ],
       });
 
-      // Generar buffer y descargar usando método nativo (funciona mejor en Tauri)
       console.log('[GenerarWord] Generando blob del documento...');
       const blob = await Packer.toBlob(doc);
       console.log('[GenerarWord] Blob generado, tamaño:', blob.size);
@@ -638,7 +651,6 @@ export default function Home() {
       const fileName = `facturas_${new Date().toISOString().split('T')[0]}.docx`;
       console.log('[GenerarWord] Descargando archivo:', fileName);
       
-      // Usar método nativo del navegador para descargar (funciona en Tauri)
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -658,6 +670,11 @@ export default function Home() {
     }
   };
 
+  /**
+   * Maneja los cambios en los campos del formulario.
+   * 
+   * @param e - Evento de cambio del input/textarea
+   */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -1022,7 +1039,13 @@ export default function Home() {
   );
 }
 
-// Componente para visualizar logs
+/**
+ * Componente para visualizar y gestionar los logs del sistema.
+ * 
+ * @param filter - Filtros actuales aplicados a los logs
+ * @param onFilterChange - Callback cuando cambian los filtros
+ * @param onClose - Callback para cerrar el visor de logs
+ */
 function LogsViewer({ filter, onFilterChange, onClose }: {
   filter: { category?: 'database' | 'api' | 'frontend' | 'ruc' | 'tauri' | 'system'; level?: 'error' | 'warn' | 'info' };
   onFilterChange: (filter: { category?: 'database' | 'api' | 'frontend' | 'ruc' | 'tauri' | 'system'; level?: 'error' | 'warn' | 'info' }) => void;

@@ -6,6 +6,14 @@ export const metadata: Metadata = {
   description: 'Sistema de gestión de facturas',
 };
 
+/**
+ * Layout raíz de la aplicación Next.js.
+ * 
+ * Proporciona la estructura HTML base y aplica los estilos globales.
+ * 
+ * @param children - Componentes hijos que se renderizarán dentro del layout
+ * @returns JSX con la estructura HTML base
+ */
 export default function RootLayout({
   children,
 }: {

@@ -1,21 +1,35 @@
 /**
- * Cliente RUC para usar desde el frontend
- * Llama directamente al API de TuRUC sin pasar por las API routes de Next.js
- * Esto permite que funcione en builds estáticos (como Tauri production)
+ * Cliente RUC para usar desde el frontend.
+ * 
+ * Llama directamente a la API de TuRUC sin pasar por las API routes de Next.js.
+ * Esto permite que funcione en builds estáticos (como Tauri production).
  */
 
 import { RUCResponse } from '@/types/factura';
 import { logInfo, logWarn, logError } from '@/lib/logger';
 
 /**
- * Consulta información de RUC directamente desde el frontend
+ * Consulta información de un contribuyente por RUC directamente desde el frontend.
+ * 
+ * Esta función es útil cuando se necesita consultar RUC desde el cliente sin depender
+ * de las API routes de Next.js, especialmente en builds estáticos o aplicaciones Tauri.
+ * 
+ * @param ruc - Número de RUC a consultar (puede incluir guión)
+ * @returns Promise con la respuesta de la consulta:
+ *   - Si es exitosa: { success: true, nombre: string, razon_social: string, ruc: string }
+ *   - Si falla: { success: false, error: string }
+ * 
+ * @example
+ * const resultado = await consultarRUCDirecto("80012345-5");
+ * if (resultado.success) {
+ *   console.log(resultado.nombre);
+ * }
  */
 export async function consultarRUCDirecto(ruc: string): Promise<RUCResponse> {
   try {
     const rucLimpio = ruc.trim();
     const rucNormalizado = rucLimpio.replace(/\s/g, '');
 
-    // Validar formato según documentación: 1-10 caracteres, patrón ^\d{1,8}(?:-\d)?$
     if (!rucNormalizado || rucNormalizado.length < 1 || rucNormalizado.length > 10 || !/^\d{1,8}(?:-\d)?$/.test(rucNormalizado)) {
       logError('ruc', 'RUC inválido', { ruc: rucNormalizado });
       return {
@@ -24,7 +38,6 @@ export async function consultarRUCDirecto(ruc: string): Promise<RUCResponse> {
       };
     }
 
-    // Usar el endpoint por query según la documentación: GET /api/contribuyente?ruc={ruc}
     const url = `https://turuc.com.py/api/contribuyente?ruc=${encodeURIComponent(rucNormalizado)}`;
     logInfo('ruc', 'Consultando RUC directamente', { ruc: rucNormalizado, url });
 
@@ -37,13 +50,11 @@ export async function consultarRUCDirecto(ruc: string): Promise<RUCResponse> {
 
     logInfo('ruc', 'Response recibida', { status: response.status, ok: response.ok, contentType: response.headers.get('content-type') });
 
-    // Verificar que la respuesta sea JSON
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
       const responseText = await response.text();
       logError('ruc', 'Respuesta no es JSON', { contentType, responseText: responseText.substring(0, 200) });
       
-      // Si recibimos HTML, probablemente es una página de error
       if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<!doctype')) {
         return {
           success: false,
@@ -87,7 +98,6 @@ export async function consultarRUCDirecto(ruc: string): Promise<RUCResponse> {
     }
     logInfo('ruc', 'Datos recibidos', { result });
 
-    // Según la documentación, la respuesta tiene estructura: { data: {...}, message: "" }
     if (result.data) {
       const razonSocial = result.data.razonSocial;
       if (razonSocial) {
@@ -101,7 +111,6 @@ export async function consultarRUCDirecto(ruc: string): Promise<RUCResponse> {
         return respuesta;
       }
       
-      // Si hay data pero no razonSocial, puede ser un error
       logWarn('ruc', 'Respuesta con data pero sin razonSocial', { data: result.data });
     }
 

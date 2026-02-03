@@ -5,7 +5,41 @@ import { logInfo, logError, logWarn } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
-// PUT - Actualizar factura existente
+/**
+ * Actualiza una factura existente en la base de datos.
+ * 
+ * Maneja dos tipos de actualizaciones:
+ * - Facturas normales: actualiza todos los campos (número, fecha, cliente, RUC, cantidad, descripción, costo)
+ * - Facturas anuladas: solo actualiza el número de factura y marca como anulada, estableciendo fecha_emision en NULL
+ * 
+ * @param request - Request de Next.js que contiene el body con los datos de la factura a actualizar
+ * @param params - Parámetros de la ruta que incluyen el ID de la factura
+ * @returns NextResponse con el resultado de la operación:
+ *   - 200: Factura actualizada exitosamente (incluye la factura actualizada)
+ *   - 400: Error de validación (ID inválido, campos faltantes, número de factura duplicado)
+ *   - 404: Factura no encontrada
+ *   - 500: Error interno del servidor
+ * 
+ * @example
+ * Body para factura normal:
+ * {
+ *   numero_factura: "001-001-0001234",
+ *   fecha_emision: "2024-01-15",
+ *   nombre_cliente: "Juan Pérez",
+ *   ruc: "12345678-9",
+ *   es_persona_juridica: false,
+ *   cantidad: "100 unidades",
+ *   descripcion: "Impresión de folletos",
+ *   costo_final: 50000,
+ *   es_anulada: false
+ * }
+ * 
+ * Body para factura anulada:
+ * {
+ *   numero_factura: "001-001-0001234",
+ *   es_anulada: true
+ * }
+ */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,10 +58,8 @@ export async function PUT(
     const body = await request.json();
     const { numero_factura, fecha_emision, nombre_cliente, ruc, es_persona_juridica, cantidad, descripcion, costo_final, es_anulada } = body;
 
-    // Si es factura anulada, descripcion y costo_final son opcionales
     const esAnulada = es_anulada === true || (!descripcion && !costo_final);
     
-    // Validaciones básicas - fecha_emision no es requerida para facturas anuladas
     if (!numero_factura || (!esAnulada && !fecha_emision) || (!esAnulada && !nombre_cliente) || (!esAnulada && !ruc) || (cantidad === undefined && !esAnulada) || es_persona_juridica === undefined) {
       logWarn('api', 'Validación fallida: campos básicos faltantes', { body });
       return NextResponse.json(
@@ -44,7 +76,6 @@ export async function PUT(
       );
     }
 
-    // Verificar que la factura existe
     logInfo('api', 'Verificando si factura existe', { id });
     try {
       const facturaExistente = await db.prepare('SELECT id FROM facturas WHERE id = ?').get([id]);
@@ -64,7 +95,6 @@ export async function PUT(
       throw dbError;
     }
 
-    // Verificar que el número de factura no esté en uso por otra factura
     logInfo('api', 'Verificando si número de factura está en uso', { numero_factura, id });
     try {
       const facturaConMismoNumero = await db.prepare('SELECT id FROM facturas WHERE numero_factura = ? AND id != ?').get([numero_factura, id]);
@@ -85,24 +115,19 @@ export async function PUT(
       throw dbError;
     }
 
-    // Actualizar factura
     logInfo('api', 'Actualizando factura en base de datos', { id, numero_factura, esAnulada });
     try {
-      // Para facturas anuladas, NO guardar fecha (NULL), usar valores por defecto para otros campos
-      // Para facturas no anuladas, usar fecha actual si está vacía
       let fechaEmisionValor: string | null;
       let nombreClienteValor: string;
       let rucValor: string;
       let cantidadValor: string;
       
       if (esAnulada) {
-        // Facturas anuladas: NO guardar fecha (NULL), usar valores por defecto
         fechaEmisionValor = null;
         nombreClienteValor = nombre_cliente || 'ANULADA';
         rucValor = ruc || '00000000-0';
         cantidadValor = cantidad || '';
       } else {
-        // Para facturas no anuladas, usar fecha actual si está vacía
         if (!fecha_emision || fecha_emision.trim() === '') {
           const fechaActual = new Date().toISOString().split('T')[0];
           fechaEmisionValor = fechaActual;
@@ -115,7 +140,6 @@ export async function PUT(
       }
       
       if (esAnulada) {
-        // Solo actualizar número de factura y marca como anulada, NO guardar fecha (NULL), cantidad vacío
         const stmt = db.prepare(`
           UPDATE facturas 
           SET numero_factura = ?, es_anulada = ?, fecha_emision = ?, cantidad = ?
@@ -123,13 +147,12 @@ export async function PUT(
         `);
         await stmt.run([
           numero_factura,
-          true, // es_anulada = 1
-          null, // fecha_emision = NULL
-          '',   // cantidad = ''
+          true,
+          null,
+          '',
           id
         ]);
       } else {
-        // Actualizar todos los campos para facturas no anuladas
         const stmt = db.prepare(`
           UPDATE facturas 
           SET numero_factura = ?, fecha_emision = ?, nombre_cliente = ?, ruc = ?,
@@ -145,7 +168,7 @@ export async function PUT(
           cantidadValor,
           descripcion || null,
           costo_final || null,
-          false, // es_anulada = 0
+          false,
           id
         ]);
       }

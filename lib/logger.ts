@@ -1,26 +1,34 @@
 /**
- * Sistema de logging general para la aplicación
+ * Sistema de logging general para la aplicación.
+ * 
  * Registra todas las operaciones críticas: base de datos, carga de datos, errores, etc.
+ * Los logs se almacenan en memoria y en localStorage (solo en el navegador).
  */
 
+/**
+ * Interfaz que representa una entrada de log.
+ */
 export interface LogEntry {
+  /** Timestamp ISO de cuando se creó el log */
   timestamp: string;
+  /** Nivel de severidad del log */
   level: 'info' | 'warn' | 'error';
+  /** Categoría del log */
   category: 'database' | 'api' | 'frontend' | 'ruc' | 'tauri' | 'system';
+  /** Mensaje descriptivo del log */
   message: string;
+  /** Datos adicionales opcionales */
   data?: any;
 }
 
-const MAX_LOG_ENTRIES = 2000; // Aumentado para más historial
+const MAX_LOG_ENTRIES = 2000;
 let logBuffer: LogEntry[] = [];
 
-// Cargar logs previos del localStorage
 if (typeof window !== 'undefined') {
   try {
     const savedLogs = localStorage.getItem('app_logs');
     if (savedLogs) {
       logBuffer = JSON.parse(savedLogs);
-      // Mantener solo los últimos MAX_LOG_ENTRIES
       if (logBuffer.length > MAX_LOG_ENTRIES) {
         logBuffer = logBuffer.slice(-MAX_LOG_ENTRIES);
       }
@@ -30,15 +38,18 @@ if (typeof window !== 'undefined') {
   }
 }
 
+/**
+ * Guarda los logs en localStorage.
+ * Si el localStorage está lleno, reduce el buffer a 500 entradas y reintenta.
+ */
 function saveLogs() {
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem('app_logs', JSON.stringify(logBuffer));
     } catch (e) {
       console.error('Error al guardar logs:', e);
-      // Si el localStorage está lleno, intentar limpiar logs antiguos
       if (e instanceof Error && e.name === 'QuotaExceededError') {
-        logBuffer = logBuffer.slice(-500); // Mantener solo los últimos 500
+        logBuffer = logBuffer.slice(-500);
         try {
           localStorage.setItem('app_logs', JSON.stringify(logBuffer));
         } catch (e2) {
@@ -93,14 +104,23 @@ export function logError(category: LogEntry['category'], message: string, data?:
 }
 
 /**
- * Obtener todos los logs
+ * Obtiene todos los logs almacenados.
+ * 
+ * @returns Array con todas las entradas de log (copia del buffer)
  */
 export function getLogs(): LogEntry[] {
   return [...logBuffer];
 }
 
 /**
- * Obtener logs filtrados por categoría o nivel
+ * Obtiene logs filtrados por categoría, nivel o limitados en cantidad.
+ * Los resultados se ordenan por timestamp descendente (más recientes primero).
+ * 
+ * @param filters - Filtros opcionales para aplicar
+ * @param filters.category - Filtrar por categoría específica
+ * @param filters.level - Filtrar por nivel específico
+ * @param filters.limit - Limitar cantidad de resultados
+ * @returns Array con las entradas de log filtradas y ordenadas
  */
 export function getLogsFiltered(filters?: {
   category?: LogEntry['category'];
@@ -117,7 +137,6 @@ export function getLogsFiltered(filters?: {
     filtered = filtered.filter(log => log.level === filters.level);
   }
   
-  // Ordenar por timestamp descendente (más recientes primero)
   filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   
   if (filters?.limit) {
@@ -128,7 +147,7 @@ export function getLogsFiltered(filters?: {
 }
 
 /**
- * Limpiar logs
+ * Limpia todos los logs del buffer y del localStorage.
  */
 export function clearLogs() {
   logBuffer = [];
@@ -138,7 +157,12 @@ export function clearLogs() {
 }
 
 /**
- * Exportar logs como texto
+ * Exporta los logs como texto plano formateado.
+ * 
+ * @param filters - Filtros opcionales para aplicar antes de exportar
+ * @param filters.category - Filtrar por categoría específica
+ * @param filters.level - Filtrar por nivel específico
+ * @returns String con los logs formateados, separados por doble salto de línea
  */
 export function exportLogsAsText(filters?: {
   category?: LogEntry['category'];
@@ -152,7 +176,11 @@ export function exportLogsAsText(filters?: {
 }
 
 /**
- * Descargar logs como archivo
+ * Descarga los logs como un archivo de texto.
+ * 
+ * @param filters - Filtros opcionales para aplicar antes de descargar
+ * @param filters.category - Filtrar por categoría específica
+ * @param filters.level - Filtrar por nivel específico
  */
 export async function downloadLogs(filters?: {
   category?: LogEntry['category'];
@@ -174,7 +202,14 @@ export async function downloadLogs(filters?: {
 }
 
 /**
- * Obtener estadísticas de logs
+ * Obtiene estadísticas de los logs almacenados.
+ * 
+ * @returns Objeto con estadísticas:
+ *   - total: cantidad total de logs
+ *   - byLevel: cantidad por nivel (info, warn, error)
+ *   - byCategory: cantidad por categoría
+ *   - lastError: última entrada de error (si existe)
+ *   - lastWarning: última entrada de advertencia (si existe)
  */
 export function getLogStats() {
   const stats = {

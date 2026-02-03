@@ -1,6 +1,16 @@
 /**
- * Script para migrar datos de SQLite (Tauri) a Neon PostgreSQL
- * Este script lee la base de datos SQLite local y migra los datos a Neon
+ * Script para migrar datos de SQLite (Tauri) a Neon PostgreSQL.
+ * 
+ * Este script lee la base de datos SQLite local (desde la ubicación por defecto de Tauri
+ * o desde una ruta proporcionada como argumento) y migra los datos a Neon PostgreSQL.
+ * 
+ * Uso:
+ *   npm run migrar-a-neon [ruta-a-facturas.db]
+ * 
+ * Si no se proporciona ruta, usa la ubicación por defecto según el sistema operativo:
+ *   - Windows: %APPDATA%\gestion-imprenta\facturas.db
+ *   - macOS: ~/Library/Application Support/gestion-imprenta/facturas.db
+ *   - Linux: ~/.config/gestion-imprenta/facturas.db
  */
 
 const Database = require('better-sqlite3');
@@ -9,11 +19,14 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// URL de conexión a Neon PostgreSQL
 const DATABASE_URL = process.env.DATABASE_URL || 
   'postgresql://neondb_owner:npg_Kt4oRPeVIE0a@ep-polished-hall-adp92fza-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require';
 
-// Obtener ruta de SQLite según el sistema operativo
+/**
+ * Obtiene la ruta de la base de datos SQLite según el sistema operativo.
+ * 
+ * @returns Ruta completa al archivo facturas.db
+ */
 function getSQLitePath() {
   const platform = os.platform();
   let appDataPath;
@@ -32,36 +45,45 @@ function getSQLitePath() {
   return appDataPath;
 }
 
-// Verificar si ya se migró
+/**
+ * Verifica si ya se realizó la migración anteriormente.
+ * 
+ * @param sqlitePath - Ruta al archivo SQLite
+ * @returns true si existe el marcador de migración, false en caso contrario
+ */
 function yaMigrado(sqlitePath) {
   const markerPath = path.join(path.dirname(sqlitePath), '.migracion-completada');
   return fs.existsSync(markerPath);
 }
 
-// Crear marcador de migración
+/**
+ * Crea un archivo marcador para indicar que la migración se completó.
+ * 
+ * @param sqlitePath - Ruta al archivo SQLite
+ */
 function crearMarcadorMigracion(sqlitePath) {
   const markerPath = path.join(path.dirname(sqlitePath), '.migracion-completada');
   fs.writeFileSync(markerPath, new Date().toISOString());
   console.log(`[MIGRACIÓN] Marcador creado: ${markerPath}`);
 }
 
+/**
+ * Función principal que ejecuta la migración de SQLite a Neon PostgreSQL.
+ */
 async function migrarSQLiteANeon() {
   console.log('='.repeat(60));
   console.log('SCRIPT DE MIGRACIÓN SQLite -> Neon PostgreSQL');
   console.log('='.repeat(60));
   console.log('');
 
-  // Obtener ruta de SQLite (puede venir como argumento)
   let sqlitePath;
   const args = process.argv.slice(2);
   const esRutaPorDefecto = args.length === 0;
   
   if (args.length > 0) {
-    // Si se proporciona como argumento, usar esa ruta
     sqlitePath = path.resolve(args[0]);
     console.log(`[INFO] Usando ruta proporcionada: ${sqlitePath}`);
   } else {
-    // Si no, usar la ruta por defecto
     sqlitePath = getSQLitePath();
   }
   
@@ -96,7 +118,6 @@ async function migrarSQLiteANeon() {
   console.log(`[✓] Base de datos SQLite encontrada`);
   console.log('');
 
-  // Verificar si ya se migró (solo si es la ruta por defecto)
   if (esRutaPorDefecto && yaMigrado(sqlitePath)) {
     console.log(`[INFO] La migración ya se realizó anteriormente.`);
     console.log(`       Si deseas forzar la migración, elimina el archivo:`);
@@ -120,7 +141,6 @@ async function migrarSQLiteANeon() {
     console.log('');
   }
 
-  // Abrir SQLite
   console.log(`[2/5] Abriendo base de datos SQLite...`);
   let sqliteDb;
   try {
@@ -132,7 +152,6 @@ async function migrarSQLiteANeon() {
   }
   console.log('');
 
-  // Leer facturas de SQLite
   console.log(`[3/5] Leyendo facturas de SQLite...`);
   let facturas;
   try {
@@ -177,7 +196,6 @@ async function migrarSQLiteANeon() {
   console.log('');
 
   try {
-    // Crear tabla si no existe
     console.log(`[4.1/5] Verificando tabla en Neon...`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS facturas (
@@ -197,7 +215,6 @@ async function migrarSQLiteANeon() {
     console.log(`[✓] Tabla verificada/creada en Neon`);
     console.log('');
 
-    // Verificar si ya hay datos en Neon
     const countResult = await client.query('SELECT COUNT(*) as count FROM facturas');
     const count = parseInt(countResult.rows[0].count);
     
@@ -223,7 +240,6 @@ async function migrarSQLiteANeon() {
       console.log('');
     }
 
-    // Iniciar transacción
     console.log(`[5/5] Migrando ${facturas.length} facturas a Neon...`);
     await client.query('BEGIN');
 
@@ -265,7 +281,6 @@ async function migrarSQLiteANeon() {
     console.log(`\r     Migradas: ${migradas}/${facturas.length}`);
     console.log('');
 
-    // Confirmar transacción
     await client.query('COMMIT');
     console.log(`[✓] Migración completada exitosamente`);
     console.log(`    - Facturas migradas: ${migradas}`);
@@ -274,12 +289,10 @@ async function migrarSQLiteANeon() {
     }
     console.log('');
 
-    // Crear marcador de migración (solo si es la ruta por defecto)
     if (esRutaPorDefecto) {
       crearMarcadorMigracion(sqlitePath);
     }
 
-    // Cerrar conexiones
     client.release();
     await pool.end();
     sqliteDb.close();
@@ -312,7 +325,6 @@ async function migrarSQLiteANeon() {
   }
 }
 
-// Ejecutar migración
 migrarSQLiteANeon().catch(error => {
   console.error('[ERROR FATAL]', error);
   process.exit(1);

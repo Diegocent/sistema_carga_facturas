@@ -3,12 +3,16 @@ import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, Tex
 import db from '@/lib/db';
 import { Factura } from '@/types/factura';
 
-// Forzar que esta ruta sea dinámica (no se ejecuta durante el build)
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Función auxiliar para parsear precios desde string (separados por salto de línea)
-// Acepta formato con punto como separador de miles: 8.000, 10.000, etc.
+/**
+ * Parsea precios desde un string que puede contener múltiples precios separados por salto de línea.
+ * Acepta formato con punto como separador de miles (ej: 8.000, 10.000) y coma como separador decimal.
+ * 
+ * @param preciosString - String con precios separados por salto de línea
+ * @returns Array de números parseados, filtrando valores inválidos o cero
+ */
 function parsearPrecios(preciosString: string): number[] {
   if (!preciosString || !preciosString.trim()) return [];
   return preciosString
@@ -36,8 +40,13 @@ function parsearPrecios(preciosString: string): number[] {
     .filter(precio => precio > 0);
 }
 
-// Función auxiliar para formatear precios para mostrar en Word
-// Muestra con punto como separador de miles
+/**
+ * Formatea precios para mostrar en el documento Word.
+ * Convierte números a formato con punto como separador de miles y prefijo "Gs.".
+ * 
+ * @param preciosString - String con precios separados por salto de línea
+ * @returns String formateado con precios separados por salto de línea, o "-" si no hay precios válidos
+ */
 function formatearPrecios(preciosString: string): string {
   if (!preciosString || !preciosString.trim()) return '-';
   const precios = parsearPrecios(preciosString);
@@ -52,12 +61,32 @@ function formatearPrecios(preciosString: string): string {
     .join('\n');
 }
 
-// Función auxiliar para sumar todos los precios de una factura
+/**
+ * Suma todos los precios de una factura.
+ * 
+ * @param preciosString - String con precios separados por salto de línea
+ * @returns Suma total de todos los precios válidos
+ */
 function sumarPreciosFactura(preciosString: string): number {
   return parsearPrecios(preciosString).reduce((sum, precio) => sum + precio, 0);
 }
 
-// GET - Generar documento Word con todas las facturas
+/**
+ * Genera un documento Word (.docx) con todas las facturas registradas en la base de datos.
+ * 
+ * El documento incluye:
+ * - Título "Registro de Facturas"
+ * - Total de facturas
+ * - Tabla con todas las facturas (número, fecha, cliente, RUC, tipo, cantidad, descripción, costo)
+ * - Fila de total con la suma de todos los costos (excluyendo facturas anuladas)
+ * 
+ * Las facturas anuladas se muestran con "ANULADA" en los campos de descripción y costo.
+ * 
+ * @returns NextResponse con:
+ *   - 200: Documento Word generado exitosamente (Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document)
+ *   - 400: No hay facturas para generar el documento
+ *   - 500: Error al generar el documento
+ */
 export async function GET() {
   try {
     const facturasRaw = await db.prepare(`
@@ -80,7 +109,6 @@ export async function GET() {
       );
     }
 
-    // Crear tabla con encabezados
     const tableRows: TableRow[] = [
       new TableRow({
         children: [
@@ -152,7 +180,6 @@ export async function GET() {
       }),
     ];
 
-    // Agregar filas de datos
     facturas.forEach((factura) => {
       tableRows.push(
         new TableRow({
@@ -162,11 +189,9 @@ export async function GET() {
             }),
             new TableCell({
               children: [new Paragraph((() => {
-                // Para facturas anuladas, fecha_emision puede ser null
                 if (factura.es_anulada || !factura.fecha_emision || factura.fecha_emision.trim() === '') {
                   return '-';
                 }
-                // Parsear fecha en hora local para evitar problemas de zona horaria
                 const [year, month, day] = factura.fecha_emision.split('-').map(Number);
                 const date = new Date(year, month - 1, day);
                 return date.toLocaleDateString('es-PY');
@@ -199,7 +224,6 @@ export async function GET() {
       );
     });
 
-    // Calcular total sumando todos los precios de todas las facturas (excluyendo anuladas)
     const total = facturas
       .filter(f => !f.es_anulada)
       .reduce((sum, factura) => sum + sumarPreciosFactura(factura.costo_final || ''), 0);
@@ -225,7 +249,6 @@ export async function GET() {
       })
     );
 
-    // Crear documento
     const doc = new Document({
       sections: [
         {
@@ -248,10 +271,8 @@ export async function GET() {
       ],
     });
 
-    // Generar buffer del documento
     const buffer = await Packer.toBuffer(doc);
 
-    // Retornar como respuesta
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { consultarRUC } from '@/lib/ruc-api';
 
-// Forzar que esta ruta sea dinámica (no se ejecuta durante el build)
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// GET - Consultar información por RUC
+/**
+ * Consulta información de un contribuyente por RUC utilizando la API de TuRUC.
+ * 
+ * @param request - Request de Next.js que debe contener el parámetro `ruc` en la query string
+ * @returns NextResponse con:
+ *   - 200: Información del contribuyente encontrada { success: true, nombre: string, razon_social: string, ruc: string }
+ *   - 400: RUC no proporcionado o inválido { success: false, error: string }
+ *   - 500: Error al consultar el RUC { success: false, error: string }
+ * 
+ * @example
+ * GET /api/ruc?ruc=80012345-5
+ * // Retorna: { success: true, nombre: "Empresa S.A.", razon_social: "Empresa S.A.", ruc: "80012345-5" }
+ */
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -57,7 +68,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// OPTIONS - Manejar preflight CORS
+/**
+ * Maneja las solicitudes preflight CORS para permitir consultas desde el frontend.
+ * 
+ * @returns NextResponse con headers CORS apropiados y status 200
+ */
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
